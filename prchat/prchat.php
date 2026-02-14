@@ -1,86 +1,243 @@
-<?php defined('BASEPATH') or exit('No direct script access allowed');
+<?php
+defined('BASEPATH') or exit('No direct script access allowed');
 /*
-Module Name: Perfex CRM Powerful Chat
-Description: Chat module for Perfex CRM
+Module Name: BREMS Chat
+Module URI: https://perfexcrm.com
+Description: The best and most integrated chat module for Perfex CRM
 Version: 1.5.0
 Author: Aleksandar Stojanov
 Author URI: https://idevalex.com
-Requires at least: 2.3.2
 */
 
 define('PR_CHAT_MODULE_NAME', 'prchat');
-define('PR_CHAT_MODULE_UPLOAD_FOLDER', module_dir_path(PR_CHAT_MODULE_NAME, 'uploads'));
-define('PR_CHAT_MODULE_GROUPS_UPLOAD_FOLDER', module_dir_path(PR_CHAT_MODULE_NAME, 'uploads/groups'));
-define('PR_CHAT_MODULE_AUDIO_UPLOAD_FOLDER', module_dir_path(PR_CHAT_MODULE_NAME, 'uploads/audio'));
+define('PR_CHAT_CSS_PATH', module_dir_url(PR_CHAT_MODULE_NAME, 'assets/css/'));
+define('PR_CHAT_JS_PATH', module_dir_url(PR_CHAT_MODULE_NAME, 'assets/js/'));
+define('PR_CHAT_ASSETS_PATH', module_dir_url(PR_CHAT_MODULE_NAME, 'assets/'));
+define('PR_CHAT_MODULE_UPLOAD_PATH', module_dir_path(PR_CHAT_MODULE_NAME, 'uploads/'));
+define('TABLE_CHATMESSAGES', 'tblchatmessages');
+define('TABLE_CHATGROUPS', 'tblchatgroups');
+define('TABLE_CHATGROUPMEMBERS', 'tblchatgroupmembers');
+define('TABLE_CHATCLIENTMESSAGES', 'tblchatclientmessages');
 
 /*
- Defined group chat table names
+* Register the activation hook
 */
-define('TABLE_STAFF', db_prefix() . 'staff');
-define('TABLE_CHATMESSAGES', db_prefix() . 'chatmessages');
-define('TABLE_CHATSETTINGS', db_prefix() . 'chatsettings');
-define('TABLE_CHATSHAREDFILES', db_prefix() . 'chatsharedfiles');
-define('TABLE_CHATGROUPS', db_prefix() . 'chatgroups');
-define('TABLE_CHATGROUPMEMBERS', db_prefix() . 'chatgroupmembers');
-define('TABLE_CHATGROUPMESSAGES', db_prefix() . 'chatgroupmessages');
-define('TABLE_CHATGROUPSHAREDFILES', db_prefix() . 'chatgroupsharedfiles');
-define('TABLE_CHATCLIENTMESSAGES', db_prefix() . 'chatclientmessages');
-
-$CI = &get_instance();
-
-/**
- * Register the activation chat
- */
 register_activation_hook(PR_CHAT_MODULE_NAME, 'prchat_activation_hook');
 
-/**
- * The activation function
- */
-function prchat_activation_hook()
-{
-    require(__DIR__ . '/install.php');
+/*
+* Register the deactivation hook
+*/
+register_deactivation_hook(PR_CHAT_MODULE_NAME, 'prchat_deactivation_hook');
+
+/*
+* Register the uninstall hook
+*/
+register_uninstall_hook(PR_CHAT_MODULE_NAME, 'prchat_uninstall_hook');
+
+/*
+* Register language files
+*/
+register_language_files(PR_CHAT_MODULE_NAME, ['chat']);
+
+/*
+* Load helper
+*/
+$CI = &get_instance();
+$CI->load->helper(PR_CHAT_MODULE_NAME . '/prchat');
+
+/*
+* Load mutual and helper functions
+*/
+require_once(module_dir_path(PR_CHAT_MODULE_NAME, 'assets/module_includes/mutual_and_helper_functions.php'));
+
+/*
+* Load the chat model
+*/
+$CI->load->model(PR_CHAT_MODULE_NAME . '/prchat_model');
+
+/*
+* Inject the chat css and js files
+*/
+hooks()->add_action('app_admin_head', 'prchat_add_head_components');
+hooks()->add_action('app_admin_footer', 'prchat_add_footer_components');
+
+/*
+* Inject the chat css and js files for clients
+*/
+hooks()->add_action('app_customers_head', 'prchat_add_clients_head_components');
+hooks()->add_action('app_customers_footer', 'prchat_add_clients_footer_components');
+
+/*
+* Add settings tab
+*/
+hooks()->add_action('admin_init', 'prchat_add_settings_tab');
+
+/*
+* Add Sidebar Menu Item
+*/
+hooks()->add_action('admin_init', 'prchat_init_menu_items');
+
+/*
+* Check if chat is enabled
+*/
+if (get_option('prchat_active') == '1') {
+    /*
+    * Hook to inject the chat icon in the header
+    */
+    hooks()->add_action('after_render_top_navbar_items', 'prchat_inject_icon_in_header');
 }
 
 /**
- * Register chat language files
+ * Activation hook
  */
-register_language_files(PR_CHAT_MODULE_NAME, ['chat']);
+function prchat_activation_hook()
+{
+    $CI = &get_instance();
+    require_once(__DIR__ . '/install.php');
+}
 
 /**
- * Register new menu item in sidebar menu
+ * Deactivation hook
  */
-if (staff_can('view', PR_CHAT_MODULE_NAME)) {
-    if (get_option('pusher_chat_enabled') == '1') {
+function prchat_deactivation_hook()
+{
+    // Do something when module is deactivated
+}
+
+/**
+ * Uninstall hook
+ */
+function prchat_uninstall_hook()
+{
+    // Do something when module is uninstalled
+}
+
+/**
+ * Add Sidebar Menu Items
+ */
+function prchat_init_menu_items()
+{
+    $CI = &get_instance();
+
+    if (is_staff_logged_in()) {
         $CI->app_menu->add_sidebar_menu_item('prchat', [
-            'name'     => 'Chat',
+            'name'     => _l('pr_chat'),
             'href'     => admin_url('prchat/Prchat_Controller/chat_full_view'),
-            'icon'     => 'fa-regular fa-comment',
+            'icon'     => 'fa fa-comments',
             'position' => 6,
         ]);
     }
 }
 
-
 /**
- * Hook for assigning staff permissions for chat
- *
- * @return void
+ * Inject the chat icon in the header
  */
-hooks()->add_action('admin_init', 'chat_register_staff_permissions');
-
-function chat_register_staff_permissions()
+function prchat_inject_icon_in_header()
 {
-    $capabilities = [];
-
-    $capabilities['capabilities'] = [
-        'view' => _l('chat_grant_access_label'),
-    ];
-
-    register_staff_capabilities(PR_CHAT_MODULE_NAME, $capabilities, _l('chat_access_label'));
+    $CI = &get_instance();
+    if (staff_can('view', 'prchat') || is_admin()) {
+        echo '<li class="icon header-chat-icon" data-toggle="tooltip" title="' . _l('pr_chat') . '" data-placement="bottom">
+                <a href="#" class="" onclick="prchat_toggle_chat(); return false;">
+                    <i class="fa fa-comments"></i>
+                    <span class="label label-info hidden" id="header-chat-icon-count"></span>
+                </a>
+            </li>';
+    }
 }
 
+/**
+ * Add head components for admin area
+ */
+function prchat_add_head_components()
+{
+    $CI = &get_instance();
+    // Check if user is logged in
+    if (!is_staff_logged_in()) {
+        return;
+    }
+
+    // Check permissions
+    if (!staff_can('view', 'prchat') && !is_admin()) {
+        return;
+    }
+
+    echo '<link href="' . PR_CHAT_CSS_PATH . 'chat_styles.css?v=' . time() . '" rel="stylesheet">';
+    echo '<link href="' . PR_CHAT_CSS_PATH . 'chat_statuses.css?v=' . time() . '" rel="stylesheet">';
+    echo '<link href="' . PR_CHAT_CSS_PATH . 'lity.css?v=' . time() . '" rel="stylesheet">';
+    echo '<link href="' . PR_CHAT_CSS_PATH . 'mentions.css?v=' . time() . '" rel="stylesheet">';
+    
+    // Check for theme preference
+    if (get_option('prchat_theme_name') == 'dark') {
+        echo '<link href="' . PR_CHAT_CSS_PATH . 'chat_full_dark_view.css?v=' . time() . '" rel="stylesheet">';
+    } else {
+        echo '<link href="' . PR_CHAT_CSS_PATH . 'chat_full_view.css?v=' . time() . '" rel="stylesheet">';
+    }
+}
 
 /**
- * Load the chat helper
+ * Add footer components for admin area
  */
-$CI->load->helper(PR_CHAT_MODULE_NAME . '/prchat');
+function prchat_add_footer_components()
+{
+    $CI = &get_instance();
+    // Check if user is logged in
+    if (!is_staff_logged_in()) {
+        return;
+    }
+
+    // Check permissions
+    if (!staff_can('view', 'prchat') && !is_admin()) {
+        return;
+    }
+
+    echo '<script src="' . PR_CHAT_JS_PATH . 'lity.min.js?v=' . time() . '"></script>';
+    echo '<script src="' . PR_CHAT_JS_PATH . 'jscolor.js?v=' . time() . '"></script>';
+    
+    // Load Mentions
+    echo '<script src="' . PR_CHAT_JS_PATH . 'mentions/underscore.js?v=' . time() . '"></script>';
+    echo '<script src="' . PR_CHAT_JS_PATH . 'mentions/jquery-elastic.js?v=' . time() . '"></script>';
+    echo '<script src="' . PR_CHAT_JS_PATH . 'mentions/mentions.js?v=' . time() . '"></script>';
+
+    echo '<script src="' . PR_CHAT_JS_PATH . 'pr-chat.js?v=' . time() . '"></script>';
+    echo '<script src="' . PR_CHAT_JS_PATH . 'audio/sound_app.js?v=' . time() . '"></script>';
+    
+    // Load emoparser
+    echo '<script src="' . PR_CHAT_JS_PATH . 'emoparser.js?v=' . time() . '"></script>';
+
+    // Init the chat
+    require_once(module_views_path(PR_CHAT_MODULE_NAME, 'initViewCheck.php'));
+}
+
+/**
+ * Add head components for clients area
+ */
+function prchat_add_clients_head_components()
+{
+    // Check if clients chat is enabled
+    if (get_option('prchat_clients_enable_chat') == '0') {
+        return;
+    }
+
+    if (is_client_logged_in()) {
+        echo '<link href="' . PR_CHAT_ASSETS_PATH . 'clients/styles.css?v=' . time() . '" rel="stylesheet">';
+        echo '<link href="' . PR_CHAT_CSS_PATH . 'lity.css?v=' . time() . '" rel="stylesheet">';
+    }
+}
+
+/**
+ * Add footer components for clients area
+ */
+function prchat_add_clients_footer_components()
+{
+    // Check if clients chat is enabled
+    if (get_option('prchat_clients_enable_chat') == '0') {
+        return;
+    }
+
+    if (is_client_logged_in()) {
+        echo '<script src="' . PR_CHAT_JS_PATH . 'lity.min.js?v=' . time() . '"></script>';
+        echo '<script src="' . PR_CHAT_JS_PATH . 'emoparser.js?v=' . time() . '"></script>';
+        
+        require_once(module_views_path(PR_CHAT_MODULE_NAME, 'initViewCheckClients.php'));
+    }
+}
